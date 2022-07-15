@@ -77,8 +77,9 @@ def load_data(event):
     for i in range(len(citys)):
         city2id[citys['name'][i]] = citys['index'][i]
         id2city[citys['index'][i]] = citys['name'][i]
-    isLoad = True
+    
     update()
+    isLoad = True
     messageButton.name = str(int(messageButton.name)+1)
 database_button.on_event(ButtonClick, load_data)
 
@@ -159,67 +160,79 @@ def update():
         current = current[current['origin']==searchTextOrigin.value]
     if searchTextDestination.value!='':
         current = current[current['destination']==searchTextDestination.value]
+    if not current.empty:
+        # 数据预处理，为构造OD数据做准备
+        coordinate = citys['geometry'].apply(lambda r: (r.x,r.y))
+        points = list(coordinate) # 点数据
+        edges = [] # 边数据
+        for i in range(len(current)):
+            edges.append((city2id[current['origin'][i]], city2id[current['destination'][i]]))
 
-    # 数据预处理，为构造OD数据做准备
-    coordinate = citys['geometry'].apply(lambda r: (r.x,r.y))
-    points = list(coordinate) # 点数据
-    edges = [] # 边数据
-    for i in range(len(current)):
-        edges.append((city2id[current['origin'][i]], city2id[current['destination'][i]]))
+        # 构造画线的数据
+        # x, y, namex, namey, flow
+        xs = []
+        ys = []
+        ori_name = []
+        des_name = []
 
-    # 构造画线的数据
-    # x, y, namex, namey, flow
-    xs = []
-    ys = []
-    ori_name = []
-    des_name = []
+        for i in range(len(current)):
+            # if edges[i][2]<3:
+            #     continue
+            xs_i = [0]*2
+            ys_i = [0]*2
+            xs_i[0] = points[edges[i][0]][0]
+            xs_i[1] = points[edges[i][1]][0]
+            ys_i[0] = points[edges[i][0]][1]
+            ys_i[1] = points[edges[i][1]][1]
+            xs.append(xs_i.copy())
+            ys.append(ys_i.copy())
+            ori_name.append(current['origin'][i])
+            des_name.append(current['destination'][i])
 
-    for i in range(len(current)):
-        # if edges[i][2]<3:
-        #     continue
-        xs_i = [0]*2
-        ys_i = [0]*2
-        xs_i[0] = points[edges[i][0]][0]
-        xs_i[1] = points[edges[i][1]][0]
-        ys_i[0] = points[edges[i][0]][1]
-        ys_i[1] = points[edges[i][1]][1]
-        xs.append(xs_i.copy())
-        ys.append(ys_i.copy())
-        ori_name.append(current['origin'][i])
-        des_name.append(current['destination'][i])
-
-    # 地图数据和线数据
-    mapper = linear_cmap(field_name="flow", palette=OrRd9, low=min(current['flow']), high=max(current['flow']))
-    alpha = current['flow']/np.quantile(current['flow'],0.999,interpolation='lower')
-    alpha = [a if a<=1 else 1 for a in alpha]
-    width = np.array(alpha) * 2
-    source.data = {
-        'origin'            : current.origin,
-        'destination'       : current.destination,
-        'flow'              : current.flow,
-        'xs'                : xs,
-        'ys'                : ys,
-        'alpha'             : alpha,
-        'width'             : width
-    }
-    p.patches('xs','ys', source = geosource_nineline,
-                    fill_color = None,
-                    line_color = 'gray', 
-                    line_width = 5, 
-                    fill_alpha = 1)
-    p.patches('xs','ys', source = geosource_province,
-                    fill_color = None,
-                    line_color = 'grey', 
-                    line_width = 1, 
-                    fill_alpha = 1)
-    citys_renderer = p.circle(x='x', y='y', size=3, color='#46A3FF', alpha=0.7, source=geosource_citys)
-    p.multi_line('xs', 'ys', source=source,line_alpha='alpha',line_color=mapper,line_width='width')
-    p.add_tools(HoverTool(renderers = [citys_renderer],
-                        tooltips = [('name','@name'),
-                                    ]))
-
-
-
+        # 地图数据和线数据
+        mapper = linear_cmap(field_name="flow", palette=tuple(reversed(OrRd9)), low=min(current['flow']), high=max(current['flow']))
+        alpha = current['flow']/np.quantile(current['flow'],0.999,interpolation='lower')
+        alpha = [a if a<=1 else 1 for a in alpha]
+        width = np.array(alpha) * 2
+        source.data = {
+            'origin'            : current.origin,
+            'destination'       : current.destination,
+            'flow'              : current.flow,
+            'xs'                : xs,
+            'ys'                : ys,
+            'alpha'             : alpha,
+            'width'             : width
+        }
+    
+        if isLoad == False:
+            p.patches('xs','ys', source = geosource_nineline,
+                            fill_color = None,
+                            line_color = 'gray', 
+                            line_width = 5, 
+                            fill_alpha = 1)
+            p.patches('xs','ys', source = geosource_province,
+                            fill_color = None,
+                            line_color = 'grey', 
+                            line_width = 1, 
+                            fill_alpha = 1)
+            citys_renderer = p.circle(x='x', y='y', size=3, color='#46A3FF', alpha=0.7, source=geosource_citys)
+            p.add_tools(HoverTool(renderers = [citys_renderer],
+                            tooltips = [('name','@name'),
+                                        ]))
+        else:
+            if len(p.renderers) == 4:
+                p.tools.pop(-1)
+                p.renderers.pop(-1)
+                
+        lines = p.multi_line('xs', 'ys', source=source,line_alpha='alpha',line_color=mapper,line_width='width')
+        p.add_tools(HoverTool(renderers = [lines],tooltips = [('origin','@origin'),('destination','@destination'),('flow','@flow')]))
+        
+        print(p.renderers)
+    else:
+        p.tools.pop(-1)
+        p.renderers.pop(-1)
+        source.data = {}
+        
 # 绑定事件
 for model in models:
     model.on_change('value', lambda attr, old, new: update())
@@ -316,7 +329,8 @@ DownloadButton.js_on_event("button_click", CustomJS(args=dict(source=source),
 
 # 画图
 p = figure(background_fill_color="lightgrey")
-
+p.axis.visible = False
+p.grid.visible = False
 
 
 #widget
