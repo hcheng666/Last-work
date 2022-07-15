@@ -28,6 +28,12 @@ citys = gpd.GeoDataFrame()
 geosource_nineline = GeoJSONDataSource()
 geosource_province = GeoJSONDataSource()
 geosource_citys = GeoJSONDataSource()
+city2id = {}
+id2city = {}
+
+# 判断数据是否导入
+isLoad  = False
+mapper = linear_cmap(field_name="flow", palette=OrRd9, low=0, high=0)
 # 消息按钮
 messageButton = Button(label="message",name=str(0),visible=False)
 messageButton.js_on_change("name", CustomJS(args=dict(type='success'),
@@ -38,7 +44,7 @@ messageButton.js_on_change("name", CustomJS(args=dict(type='success'),
 # 数据库导入按钮
 database_button = Button(visible=False, name='Database')
 def load_data(event):
-    global df,nine_line,province,citys,geosource_citys,geosource_nineline,geosource_province
+    global isLoad,df,nine_line,province,citys,geosource_citys,geosource_nineline,geosource_province,city2id,id2city
     sql_query = "select * from "
     pg_table_name = "edge_list"
     connect = psycopg2.connect(database="first", user="postgres", password="774165", host="127.0.0.1", port="5432")
@@ -57,6 +63,7 @@ def load_data(event):
     spinnerMin.value = 1
     spinnerMax.value = 10
     
+    # 把地图数据读进来
     connect = create_engine(
     f'postgresql://postgres:774165@127.0.0.1:5432/first')
     nine_line = gpd.read_postgis('select * from nine_line_3857',con=connect,geom_col='geometry')
@@ -66,6 +73,11 @@ def load_data(event):
     geosource_province = GeoJSONDataSource(geojson = province.to_json())
     geosource_citys = GeoJSONDataSource(geojson = citys.to_json())
 
+    # 构造查询字典
+    for i in range(len(citys)):
+        city2id[citys['name'][i]] = citys['index'][i]
+        id2city[citys['index'][i]] = citys['name'][i]
+    isLoad = True
     update()
     messageButton.name = str(int(messageButton.name)+1)
 database_button.on_event(ButtonClick, load_data)
@@ -140,37 +152,29 @@ models.append(spinnerMax)
 
 # 查找和筛选更新函数    待更新：精确查找和模糊查找
 def update():
+    global mapper
     current = df[(df['flow'] >= spinnerMin.value) & (df['flow'] <= spinnerMax.value)].dropna()
+    current = current.reset_index(drop=True)
     if searchTextOrigin.value!='':
         current = current[current['origin']==searchTextOrigin.value]
     if searchTextDestination.value!='':
         current = current[current['destination']==searchTextDestination.value]
-    source.data = {
-        'origin'            : current.origin,
-        'destination'       : current.destination,
-        'flow'              : current.flow,
-    }
 
     # 数据预处理，为构造OD数据做准备
     coordinate = citys['geometry'].apply(lambda r: (r.x,r.y))
     points = list(coordinate) # 点数据
     edges = [] # 边数据
-    edge_list = pd.DataFrame(source.data)
-    for i in range(362):
-        for j in range(361):
-            k = j+1 if i==j else j
-            #edges.append((i,k,edge_list['flow'][i*361+j]))
-            edges.append((i,k))
+    for i in range(len(current)):
+        edges.append((city2id[current['origin'][i]], city2id[current['destination'][i]]))
 
     # 构造画线的数据
     # x, y, namex, namey, flow
     xs = []
     ys = []
-    flows = []
     ori_name = []
     des_name = []
 
-    for i in range(len(edge_list)):
+    for i in range(len(current)):
         # if edges[i][2]<3:
         #     continue
         xs_i = [0]*2
@@ -181,22 +185,38 @@ def update():
         ys_i[1] = points[edges[i][1]][1]
         xs.append(xs_i.copy())
         ys.append(ys_i.copy())
-        flows.append(edge_list['flow'][i])
-        ori_name.append(edge_list['origin'][i])
-        des_name.append(edge_list['destination'][i])
+        ori_name.append(current['origin'][i])
+        des_name.append(current['destination'][i])
 
     # 地图数据和线数据
-    mapper = linear_cmap(field_name="flow", palette=OrRd9, low=min(flows), high=max(flows))
-    alpha = flows/np.quantile(flows,0.999,interpolation='lower')
+    mapper = linear_cmap(field_name="flow", palette=OrRd9, low=min(current['flow']), high=max(current['flow']))
+    alpha = current['flow']/np.quantile(current['flow'],0.999,interpolation='lower')
     alpha = [a if a<=1 else 1 for a in alpha]
     width = np.array(alpha) * 2
-    multi_line_source = ColumnDataSource({
-        'xs': xs,
-        'ys': ys,
-        'flow': flows,
-        'alpha': alpha,
-        'width': width
-    })
+    source.data = {
+        'origin'            : current.origin,
+        'destination'       : current.destination,
+        'flow'              : current.flow,
+        'xs'                : xs,
+        'ys'                : ys,
+        'alpha'             : alpha,
+        'width'             : width
+    }
+    p.patches('xs','ys', source = geosource_nineline,
+                    fill_color = None,
+                    line_color = 'gray', 
+                    line_width = 5, 
+                    fill_alpha = 1)
+    p.patches('xs','ys', source = geosource_province,
+                    fill_color = None,
+                    line_color = 'grey', 
+                    line_width = 1, 
+                    fill_alpha = 1)
+    citys_renderer = p.circle(x='x', y='y', size=3, color='#46A3FF', alpha=0.7, source=geosource_citys)
+    p.multi_line('xs', 'ys', source=source,line_alpha='alpha',line_color=mapper,line_width='width')
+    p.add_tools(HoverTool(renderers = [citys_renderer],
+                        tooltips = [('name','@name'),
+                                    ]))
 
 
 
@@ -238,80 +258,65 @@ DownloadButton.js_on_event("button_click", CustomJS(args=dict(source=source),
 
 # -------------------------------------------------------------------------------------
 # 地图展示模块
-# 数据导入
-connect = create_engine(
-    f'postgresql://postgres:774165@127.0.0.1:5432/first')
-nine_line = gpd.read_postgis('select * from nine_line_3857',con=connect,geom_col='geometry')
-province = gpd.read_postgis('select * from province_3857',con=connect, geom_col='geometry')
-citys = gpd.read_postgis('select * from citys_3857', con=connect, geom_col='geometry')
+# # 数据导入
+# connect = create_engine(
+#     f'postgresql://postgres:774165@127.0.0.1:5432/first')
+# nine_line = gpd.read_postgis('select * from nine_line_3857',con=connect,geom_col='geometry')
+# province = gpd.read_postgis('select * from province_3857',con=connect, geom_col='geometry')
+# citys = gpd.read_postgis('select * from citys_3857', con=connect, geom_col='geometry')
 
-# 数据预处理，为构造OD数据做准备
-coordinate = citys['geometry'].apply(lambda r: (r.x,r.y))
-points = list(coordinate) # 点数据
-edges = [] # 边数据
-edge_list = df
-for i in range(362):
-    for j in range(361):
-        k = j+1 if i==j else j
-        #edges.append((i,k,edge_list['flow'][i*361+j]))
-        edges.append((i,k))
+# # 数据预处理，为构造OD数据做准备
+# coordinate = citys['geometry'].apply(lambda r: (r.x,r.y))
+# points = list(coordinate) # 点数据
+# edges = [] # 边数据
+# edge_list = df
+# for i in range(362):
+#     for j in range(361):
+#         k = j+1 if i==j else j
+#         #edges.append((i,k,edge_list['flow'][i*361+j]))
+#         edges.append((i,k))
 
-# 构造画线的数据
-# x, y, namex, namey, flow
-xs = []
-ys = []
-flows = []
-ori_name = []
-des_name = []
+# # 构造画线的数据
+# # x, y, namex, namey, flow
+# xs = []
+# ys = []
+# flows = []
+# ori_name = []
+# des_name = []
 
-for i in range(len(edge_list)):
-    # if edges[i][2]<3:
-    #     continue
-    xs_i = [0]*2
-    ys_i = [0]*2
-    xs_i[0] = points[edges[i][0]][0]
-    xs_i[1] = points[edges[i][1]][0]
-    ys_i[0] = points[edges[i][0]][1]
-    ys_i[1] = points[edges[i][1]][1]
-    xs.append(xs_i.copy())
-    ys.append(ys_i.copy())
-    flows.append(edge_list['flow'][i])
-    ori_name.append(edge_list['origin'][i])
-    des_name.append(edge_list['destination'][i])
+# for i in range(len(edge_list)):
+#     # if edges[i][2]<3:
+#     #     continue
+#     xs_i = [0]*2
+#     ys_i = [0]*2
+#     xs_i[0] = points[edges[i][0]][0]
+#     xs_i[1] = points[edges[i][1]][0]
+#     ys_i[0] = points[edges[i][0]][1]
+#     ys_i[1] = points[edges[i][1]][1]
+#     xs.append(xs_i.copy())
+#     ys.append(ys_i.copy())
+#     flows.append(edge_list['flow'][i])
+#     ori_name.append(edge_list['origin'][i])
+#     des_name.append(edge_list['destination'][i])
 
-# 地图数据和线数据
-mapper = linear_cmap(field_name="flow", palette=OrRd9, low=min(flows), high=max(flows))
-alpha = flows/np.quantile(flows,0.999,interpolation='lower')
-alpha = [a if a<=1 else 1 for a in alpha]
-width = np.array(alpha) * 2
-multi_line_source = ColumnDataSource({
-    'xs': xs,
-    'ys': ys,
-    'flow': flows,
-    'alpha': alpha,
-    'width': width
-})
+# # 地图数据和线数据
+# mapper = linear_cmap(field_name="flow", palette=OrRd9, low=min(flows), high=max(flows))
+# alpha = flows/np.quantile(flows,0.999,interpolation='lower')
+# alpha = [a if a<=1 else 1 for a in alpha]
+# width = np.array(alpha) * 2
+# multi_line_source = ColumnDataSource({
+#     'xs': xs,
+#     'ys': ys,
+#     'flow': flows,
+#     'alpha': alpha,
+#     'width': width
+# })
 
 
 
 # 画图
 p = figure(background_fill_color="lightgrey")
-# Add patch renderer to figure.
-p.patches('xs','ys', source = geosource_nineline,
-                fill_color = None,
-                line_color = 'gray', 
-                line_width = 5, 
-                fill_alpha = 1)
-province_renderer = p.patches('xs','ys', source = geosource_province,
-                fill_color = None,
-                line_color = 'grey', 
-                line_width = 1, 
-                fill_alpha = 1)
-citys_renderer = p.circle(x='x', y='y', size=3, color='#46A3FF', alpha=0.7, source=geosource_citys)
-lines = p.multi_line('xs', 'ys', source=multi_line_source,line_alpha='alpha',line_color=mapper,line_width='width')
-p.add_tools(HoverTool(renderers = [citys_renderer],
-                      tooltips = [('name','@name'),
-                                ]))
+
 
 
 #widget
@@ -324,8 +329,8 @@ columns = [
 data_table = DataTable(source=source, columns=columns, width=500)
 #spinner = row(spinnerMin,spinnerMax)
 #controls = column(slider, DownloadButton, spinner)
-searchFilter = column(row(spinnerMin,spinnerMax),row(searchTextOrigin,searchTextDestination),DownloadButton,messageButton)
-rows = row(data_table, searchFilter)
+searchFilter = column(row(spinnerMin,spinnerMax),row(searchTextOrigin,searchTextDestination),messageButton)
+rows = row(column(searchFilter,data_table,DownloadButton), p)
 rows.name = "Row"
 curdoc().add_root(fileinput)
 curdoc().add_root(database_button)
