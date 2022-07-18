@@ -9,6 +9,7 @@ import psycopg2
 import pandas as pd
 import base64
 from sqlalchemy import create_engine
+import re
 
 from bokeh.events import ButtonClick
 from bokeh.io import curdoc
@@ -152,14 +153,27 @@ models.append(spinnerMin)
 models.append(spinnerMax)
 
 # 查找和筛选更新函数    待更新：精确查找和模糊查找
+# 模糊查找函数
+def fuzzyfinder(user_input, collection):
+        suggestions = []
+        pattern = '.*'.join(user_input) # Converts 'djm' to 'd.*j.*m'
+        regex = re.compile(pattern)     # Compiles a regex.
+        for item in collection:
+            match = regex.search(item)  # Checks if the current item matches the regex.
+            if match:
+                suggestions.append(True)
+            else :
+                suggestions.append(False)
+        return suggestions
+
+
 def update():
     global mapper
-    current = df[(df['flow'] >= spinnerMin.value) & (df['flow'] <= spinnerMax.value)].dropna()
-    current = current.reset_index(drop=True)
+    current = df[(df['flow'] >= spinnerMin.value) & (df['flow'] <= spinnerMax.value)].dropna().reset_index(drop=True)
     if searchTextOrigin.value!='':
-        current = current[current['origin']==searchTextOrigin.value]
+        current = current[fuzzyfinder(searchTextOrigin.value,current['origin'])].reset_index(drop=True)
     if searchTextDestination.value!='':
-        current = current[current['destination']==searchTextDestination.value]
+        current = current[fuzzyfinder(searchTextDestination.value,current['destination'])].reset_index(drop=True)
     if not current.empty:
         # 数据预处理，为构造OD数据做准备
         coordinate = citys['geometry'].apply(lambda r: (r.x,r.y))
@@ -226,10 +240,12 @@ def update():
         else:
             if len(p.renderers) == 4:
                 p.tools.pop(-1)
+                p.tools.pop(-1)
                 p.renderers.pop(-1)
                 
         lines = p.multi_line('xs', 'ys', source=source,line_alpha='alpha',line_color=mapper,line_width='width',
-        hover_line_color = Spectral4[1],selection_line_color=Spectral4[2],selection_line_width=3)
+        hover_line_color = Spectral4[1],selection_line_color=Spectral4[2],selection_line_width=3, hover_line_width=3,
+        hover_line_alpha=1,selection_line_alpha=1)
         p.add_tools(HoverTool(renderers = [lines],tooltips = [('origin','@origin'),('destination','@destination'),('flow','@flow')]))
         p.add_tools(TapTool(renderers = [lines]))
         #lines.selection_glyph =  MultiLine(line_color=Spectral4[2], line_width=10)
