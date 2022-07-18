@@ -13,12 +13,12 @@ from sqlalchemy import create_engine
 from bokeh.events import ButtonClick
 from bokeh.io import curdoc
 from bokeh.layouts import column, row
-from bokeh.palettes import OrRd9
+from bokeh.palettes import OrRd9, Spectral4
 from bokeh.transform import linear_cmap
 from bokeh.plotting import figure
 from bokeh.models import (Button, ColumnDataSource, CustomJS, DataTable,
                           NumberFormatter, RangeSlider, TableColumn, Spinner, FileInput, Dropdown,
-                          TextInput, GeoJSONDataSource, HoverTool)
+                          TextInput, GeoJSONDataSource, HoverTool, MultiLine, Circle, TapTool)
 # 定义变量
 df = pd.DataFrame()
 source = ColumnDataSource(data=dict())
@@ -215,20 +215,27 @@ def update():
                             line_color = 'grey', 
                             line_width = 1, 
                             fill_alpha = 1)
-            citys_renderer = p.circle(x='x', y='y', size=3, color='#46A3FF', alpha=0.7, source=geosource_citys)
+            citys_renderer = p.circle(x='x', y='y', size=3, color='#46A3FF', alpha=0.7,
+             hover_color=Spectral4[1],selection_color=Spectral4[2], source=geosource_citys)
             p.add_tools(HoverTool(renderers = [citys_renderer],
                             tooltips = [('name','@name'),
                                         ]))
+            p.add_tools(TapTool(renderers = [citys_renderer]))
+            #citys_renderer.selection_glyph = Circle(size=10, fill_color=Spectral4[2])
+            #citys_renderer.hover_glyph = Circle(size=10, fill_color=Spectral4[1])
         else:
             if len(p.renderers) == 4:
                 p.tools.pop(-1)
                 p.renderers.pop(-1)
                 
-        lines = p.multi_line('xs', 'ys', source=source,line_alpha='alpha',line_color=mapper,line_width='width')
+        lines = p.multi_line('xs', 'ys', source=source,line_alpha='alpha',line_color=mapper,line_width='width',
+        hover_line_color = Spectral4[1],selection_line_color=Spectral4[2],selection_line_width=3)
         p.add_tools(HoverTool(renderers = [lines],tooltips = [('origin','@origin'),('destination','@destination'),('flow','@flow')]))
-        
-        print(p.renderers)
+        p.add_tools(TapTool(renderers = [lines]))
+        #lines.selection_glyph =  MultiLine(line_color=Spectral4[2], line_width=10)
+        #lines.hover_glyph = MultiLine(line_color=Spectral4[1], line_width=10)
     else:
+        p.tools.pop(-1)
         p.tools.pop(-1)
         p.renderers.pop(-1)
         source.data = {}
@@ -328,7 +335,7 @@ DownloadButton.js_on_event("button_click", CustomJS(args=dict(source=source),
 
 
 # 画图
-p = figure(background_fill_color="lightgrey")
+p = figure(background_fill_color="lightgrey",tools = "pan,wheel_zoom,zoom_in,zoom_out,reset")
 p.axis.visible = False
 p.grid.visible = False
 
