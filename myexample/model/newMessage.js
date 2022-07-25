@@ -352,4 +352,4 @@ const MessageType = {
 const messageComponent = new messageControl();
 
 // 调用
-messageComponent.message({ content: '训练中！' , type: type, againBtn: 'true', duration: 3000});
+messageComponent.message({ content: content , type: type, againBtn: 'true', duration: duration});

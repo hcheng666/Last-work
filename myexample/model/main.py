@@ -235,9 +235,10 @@ def train():
 def callback():
     pool = multiprocessing.Pool()
     pool.apply_async(train)
-    print('训练中')
+    div.text = '训练中'
     pool.close()
     pool.join()
+    messageButton.name = str(int(messageButton.name)+1)
     if p1.renderers != []:
         p1.renderers.pop()
     p1_source.data = {
@@ -268,7 +269,7 @@ def callback():
 # button_train.js_on_click(CustomJS(code="""
 #         console.log('1111')
 #     """))
-button_train.js_on_click(CustomJS(args=dict(type='warning'),
+button_train.js_on_click(CustomJS(args=dict(type='warning',content='开始训练，请稍等', duration='3000'),
                         code=open(join(dirname(__file__), "newMessage.js")).read()))
 button_train.on_event(ButtonClick, callback)
 # 正样本采样和原始网络的散点图
@@ -288,8 +289,12 @@ for i in range(len(citys)):
 table_source = ColumnDataSource(data=dict())
 data_table = DataTable(source=table_source, columns=columns, width=700)
 div = Div(text='准备训练')
+# 消息按钮
+messageButton = Button(label="message",name=str(0),visible=False)
+messageButton.js_on_change("name", CustomJS(args=dict(type='success',content='训练完成', duration='1000'),
+                            code=open(join(dirname(__file__), "newMessage.js")).read()))
 
-curdoc().add_root(column(row(column(spinner_target,spinner_negative),column(spinner_dimension,spinner_epoch)),row(button_train,div),row(data_table,column(p1,p2,p3))))
+curdoc().add_root(column(row(column(messageButton,spinner_target,spinner_negative),column(spinner_dimension,spinner_epoch)),row(button_train,div),row(data_table,column(p1,p2,p3))))
 
 
 # 功能已近实现，但还有几个问题
