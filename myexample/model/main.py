@@ -17,7 +17,7 @@ nest_asyncio.apply()
 from os.path import dirname, join
 
 
-from bokeh.io import show, curdoc
+from bokeh.io import curdoc
 from bokeh.models import HoverTool,ColumnDataSource, TableColumn, DataTable
 from bokeh.models import Button, CustomJS, Spinner, NumberFormatter, Div
 from bokeh.plotting import figure
@@ -26,7 +26,13 @@ import pandas as pd
 import numpy as np
 from bokeh.palettes import OrRd9
 from bokeh.events import ButtonClick
-
+import holoviews as hv
+from holoviews.operation.datashader import datashade
+import holoviews.operation.datashader as hd
+hv.extension("bokeh")
+hd.shade.cmap=["lightblue", "darkblue"]
+renderer = hv.renderer('bokeh')
+renderer = renderer.instance(mode='server')
 
 flow = np.load(r"data/data_avg.npy")
 citys = pd.read_csv(r"data/citys_coordiante.csv")
@@ -241,25 +247,38 @@ def callback():
     messageButton.name = str(int(messageButton.name)+1)
     if p1.renderers != []:
         p1.renderers.pop()
-    p1_source.data = {
-        'x': flow.flatten(),
-        'y': np.load('data.npy').flatten()
-    }
+    p1_data = (flow.flatten(),np.load('data.npy').flatten())
+    p1d = datashade(hv.Points(p1_data).opts(size=3))
+    hvp1 = renderer.get_plot(p1d)
+    p1.renderers.append(hvp1.state.renderers[0])
+    # p1_source.data = {
+    #     'x': flow.flatten(),
+    #     'y': np.load('data.npy').flatten()
+    # }
     if p2.renderers != []:
         p2.renderers.pop()
-    p2_source.data = {
-        'x': np.load('geo.npy').flatten(),
-        'y': np.load('dot_simility_i.npy').flatten()
-    }
+    p2_data = (np.load('geo.npy').flatten(),np.load('dot_simility_i.npy').flatten())
+    p2d = datashade(hv.Points(p2_data).opts(size=3))
+    hvp2 = renderer.get_plot(p2d)
+    p2.renderers.append(hvp2.state.renderers[0])
+    # p2_source.data = {
+    #     'x': np.load('geo.npy').flatten(),
+    #     'y': np.load('dot_simility_i.npy').flatten()
+    # }
     if p3.renderers != []:
         p3.renderers.pop()
-    p3_source.data = {
-        'x': np.load('geo.npy').flatten(),
-        'y': np.load('d_p.npy').flatten()
-    }
-    p1.circle(y='y', x='x',color='red',size=3,source=p1_source)
-    p2.circle(y='y', x='x',color='red',size=3,source=p2_source)
-    p3.circle(y='y', x='x',color='red',size=3,source=p3_source)
+    p3_data = (np.load('geo.npy').flatten(),np.load('d_p.npy').flatten())
+    p3d = datashade(hv.Points(p3_data).opts(size=3))
+    hvp3 = renderer.get_plot(p3d)
+    p3.renderers.append(hvp3.state.renderers[0])
+    # p3_source.data = {
+    #     'x': np.load('geo.npy').flatten(),
+    #     'y': np.load('d_p.npy').flatten()
+    # }
+
+    # p1.circle(y='y', x='x',color='red',size=3,source=p1_source)
+    # p2.circle(y='y', x='x',color='red',size=3,source=p2_source)
+    # p3.circle(y='y', x='x',color='red',size=3,source=p3_source)
     table_source.data = np.load('table_data.npy',allow_pickle=True).item()
     # 加一个按钮的点击，提示训练完成
     div.text = '训练完成'
@@ -274,13 +293,13 @@ button_train.js_on_click(CustomJS(args=dict(type='warning',content='开始训练
 button_train.on_event(ButtonClick, callback)
 # 正样本采样和原始网络的散点图
 p1 = figure(background_fill_color="lightgrey", width=300,height=300)
-p1_source = ColumnDataSource(data=dict())
+#p1_source = ColumnDataSource(data=dict())
 # 两个相关性散点图
 p2 = figure(background_fill_color="lightgrey", width=300,height=300)
-p2_source = ColumnDataSource(data=dict())
+#p2_source = ColumnDataSource(data=dict())
 
 p3 = figure(background_fill_color="lightgrey", width=300,height=300)
-p3_source = ColumnDataSource(data=dict())
+#p3_source = ColumnDataSource(data=dict())
 # 向量表
 columns = []
 for i in range(len(citys)):

@@ -3,6 +3,7 @@ This example shows the capability of exporting a csv file from ColumnDataSource.
 
 '''
 from os.path import dirname, join
+from turtle import color
 import geopandas as gpd
 import numpy as np
 import psycopg2
@@ -19,7 +20,8 @@ from bokeh.transform import linear_cmap
 from bokeh.plotting import figure
 from bokeh.models import (Button, ColumnDataSource, CustomJS, DataTable,
                           NumberFormatter, RangeSlider, TableColumn, Spinner, FileInput, Dropdown,
-                          TextInput, GeoJSONDataSource, HoverTool, MultiLine, Circle, TapTool)
+                          TextInput, GeoJSONDataSource, HoverTool, MultiLine, Circle, TapTool,GraphRenderer,
+                          StaticLayoutProvider,EdgesAndLinkedNodes)
 # 定义变量
 df = pd.DataFrame()
 source = ColumnDataSource(data=dict())
@@ -34,7 +36,6 @@ id2city = {}
 
 # 判断数据是否导入
 isLoad  = False
-mapper = linear_cmap(field_name="flow", palette=OrRd9, low=0, high=0)
 # 消息按钮
 messageButton = Button(label="message",name=str(0),visible=False)
 messageButton.js_on_change("name", CustomJS(args=dict(type='success'),
@@ -55,9 +56,6 @@ def load_data(event):
         print(F'查询失败，详情:{e}')
     finally:
         connect.close()
-    df.columns  = ['origin', 'destination', 'flow']
-    df['flow'] = df['flow'].apply(lambda r: float(r))
-    df = df.head(10000)
     # 每次加载文件要清空查询和筛选组件
     searchTextOrigin.value = ''
     searchTextDestination.value = ''
@@ -79,6 +77,16 @@ def load_data(event):
         city2id[citys['name'][i]] = citys['index'][i]
         id2city[citys['index'][i]] = citys['name'][i]
     
+    # 构造边数据
+    df.columns = ['origin','destination','flow']
+    df['flow'] = df['flow'].apply(lambda r: float(r))
+    df['start'] = df['origin'].apply(lambda r: city2id[r])
+    df['end'] = df['destination'].apply(lambda r: city2id[r])
+    alpha = df['flow']/np.quantile(df['flow'],0.99,interpolation='lower')
+    df['alpha'] = pd.Series([a if a<=1 else 1 for a in alpha])
+    df['width'] = df['alpha'].apply(lambda r:r*2)
+    df = df.head(50000)
+
     update()
     isLoad = True
     messageButton.name = str(int(messageButton.name)+1)
@@ -127,19 +135,6 @@ dropdown.js_on_click(CustomJS(code="""
     }
     """))
 # ----------------------------------------------------------------------------------------
-# def function_to_call(attr, old, new):
-#     print dropdown.value
-
-# dropdown.on_change('value', function_to_call)
-# dropdown = Dropdown(label='File', menu=['Open'], name='Dropdown', tags=['hi'])
-
-# # Set up callback for Dropdown widget
-# dropdown.js_on_click(CustomJS(code="""
-#     if (this.item == 'Open') {
-#         document.getElementById('FileInputElement').querySelector('input[type=file]').dispatchEvent(new MouseEvent('click'))
-#     }
-#     """))
-#--------------------------------------------------
 
 # 查找和筛选组件
 models = []
@@ -169,54 +164,69 @@ def fuzzyfinder(user_input, collection):
 
 def update():
     global mapper
-    current = df[(df['flow'] >= spinnerMin.value) & (df['flow'] <= spinnerMax.value)].dropna().reset_index(drop=True)
+    current = df[(df['flow'] >= spinnerMin.value) & (df['flow'] <= spinnerMax.value)]
     if searchTextOrigin.value!='':
-        current = current[fuzzyfinder(searchTextOrigin.value,current['origin'])].reset_index(drop=True)
+        current = current[fuzzyfinder(searchTextOrigin.value,current['origin'])]
     if searchTextDestination.value!='':
-        current = current[fuzzyfinder(searchTextDestination.value,current['destination'])].reset_index(drop=True)
+        current = current[fuzzyfinder(searchTextDestination.value,current['destination'])]
     if not current.empty:
         # 数据预处理，为构造OD数据做准备
-        coordinate = citys['geometry'].apply(lambda r: (r.x,r.y))
-        points = list(coordinate) # 点数据
-        edges = [] # 边数据
-        for i in range(len(current)):
-            edges.append((city2id[current['origin'][i]], city2id[current['destination'][i]]))
+        mapper = linear_cmap(field_name="flow", palette=tuple(reversed(OrRd9)), low=min(current['flow']), high=max(current['flow']))
+        alpha = current['flow']/np.quantile(current['flow'],0.999,interpolation='lower')
+        current['alpha'] = pd.Series([a if a<=1 else 1 for a in alpha])
+        current['width'] = current['alpha'].apply(lambda r:r*2)
+        source.data = {
+        'index'             : current.index,
+        'origin'            : current.origin,
+        'destination'       : current.destination,
+        'flow'              : current.flow,
+        'start'             : current.start,
+        'end'               : current.end,
+        'alpha'             : current.alpha,
+        'width'             : current.width
+        }
+        graph.edge_renderer.glyph = MultiLine(line_color=mapper, line_alpha='alpha', line_width='width')
+        #coordinate = citys['geometry'].apply(lambda r: (r.x,r.y))
+        #points = list(coordinate) # 点数据
+        # edges = [] # 边数据
+        # for i in range(len(current)):
+        #     edges.append((city2id[current['origin'][i]], city2id[current['destination'][i]]))
 
         # 构造画线的数据
         # x, y, namex, namey, flow
-        xs = []
-        ys = []
-        ori_name = []
-        des_name = []
+        # xs = []
+        # ys = []
+        # ori_name = []
+        # des_name = []
 
-        for i in range(len(current)):
-            # if edges[i][2]<3:
-            #     continue
-            xs_i = [0]*2
-            ys_i = [0]*2
-            xs_i[0] = points[edges[i][0]][0]
-            xs_i[1] = points[edges[i][1]][0]
-            ys_i[0] = points[edges[i][0]][1]
-            ys_i[1] = points[edges[i][1]][1]
-            xs.append(xs_i.copy())
-            ys.append(ys_i.copy())
-            ori_name.append(current['origin'][i])
-            des_name.append(current['destination'][i])
+        # for i in range(len(current)):
+        #     # if edges[i][2]<3:
+        #     #     continue
+        #     xs_i = [0]*2
+        #     ys_i = [0]*2
+        #     xs_i[0] = points[edges[i][0]][0]
+        #     xs_i[1] = points[edges[i][1]][0]
+        #     ys_i[0] = points[edges[i][0]][1]
+        #     ys_i[1] = points[edges[i][1]][1]
+        #     xs.append(xs_i.copy())
+        #     ys.append(ys_i.copy())
+        #     ori_name.append(current['origin'][i])
+        #     des_name.append(current['destination'][i])
 
         # 地图数据和线数据
-        mapper = linear_cmap(field_name="flow", palette=tuple(reversed(OrRd9)), low=min(current['flow']), high=max(current['flow']))
-        alpha = current['flow']/np.quantile(current['flow'],0.999,interpolation='lower')
-        alpha = [a if a<=1 else 1 for a in alpha]
-        width = np.array(alpha) * 2
-        source.data = {
-            'origin'            : current.origin,
-            'destination'       : current.destination,
-            'flow'              : current.flow,
-            'xs'                : xs,
-            'ys'                : ys,
-            'alpha'             : alpha,
-            'width'             : width
-        }
+        # mapper = linear_cmap(field_name="flow", palette=tuple(reversed(OrRd9)), low=min(current['flow']), high=max(current['flow']))
+        # alpha = current['flow']/np.quantile(current['flow'],0.999,interpolation='lower')
+        # alpha = [a if a<=1 else 1 for a in alpha]
+        # width = np.array(alpha) * 2
+        # source.data = {
+        #     'origin'            : current.origin,
+        #     'destination'       : current.destination,
+        #     'flow'              : current.flow,
+        #     'xs'                : xs,
+        #     'ys'                : ys,
+        #     'alpha'             : alpha,
+        #     'width'             : width
+        # }
     
         if isLoad == False:
             p.patches('xs','ys', source = geosource_nineline,
@@ -229,63 +239,43 @@ def update():
                             line_color = 'grey', 
                             line_width = 1, 
                             fill_alpha = 1)
-            citys_renderer = p.circle(x='x', y='y', size=3, color='#46A3FF', alpha=0.7,
-             hover_color=Spectral4[1],selection_color=Spectral4[2], source=geosource_citys)
-            p.add_tools(HoverTool(renderers = [citys_renderer],
-                            tooltips = [('name','@name'),
-                                        ]))
-            p.add_tools(TapTool(renderers = [citys_renderer]))
+            # citys_renderer = p.circle(x='x', y='y', size=3, color='#46A3FF', alpha=0.7,
+            #  hover_color=Spectral4[1],selection_color=Spectral4[2], source=geosource_citys)
+            # p.add_tools(HoverTool(renderers = [citys_renderer],
+            #                 tooltips = [('name','@name'),
+            #                             ]))
+            # p.add_tools(TapTool(renderers = [citys_renderer]))
             #citys_renderer.selection_glyph = Circle(size=10, fill_color=Spectral4[2])
-            #citys_renderer.hover_glyph = Circle(size=10, fill_color=Spectral4[1])
-        else:
-            if len(p.renderers) == 4:
-                p.tools.pop(-1)
-                p.tools.pop(-1)
-                p.renderers.pop(-1)
+            #citys_renderer.hover_glyph = Circle(size=10, fill_color=Spectral4[1]) 
+            graph.node_renderer.data_source.add(citys['index'], 'index')
+            graph_layout = dict(zip(citys['index'], zip(citys['geometry'].apply(lambda r: r.x), citys['geometry'].apply(lambda r: r.y))))
+            graph.layout_provider = StaticLayoutProvider(graph_layout=graph_layout)
+            p.add_tools(hover_tool, tap_tool)
+            p.renderers.append(graph)
+        
+        # else:
+        #     if len(p.renderers) == 4:
+        #         p.tools.pop(-1)
+        #         p.tools.pop(-1)
+        #         p.renderers.pop(-1)
                 
-        lines = p.multi_line('xs', 'ys', source=source,line_alpha='alpha',line_color=mapper,line_width='width',
-        hover_line_color = Spectral4[1],selection_line_color=Spectral4[2],selection_line_width=3, hover_line_width=3,
-        hover_line_alpha=1,selection_line_alpha=1)
-        p.add_tools(HoverTool(renderers = [lines],tooltips = [('origin','@origin'),('destination','@destination'),('flow','@flow')]))
-        p.add_tools(TapTool(renderers = [lines]))
+        # lines = p.multi_line('xs', 'ys', source=source,line_alpha='alpha',line_color=mapper,line_width='width',
+        # hover_line_color = Spectral4[1],selection_line_color=Spectral4[2],selection_line_width=3, hover_line_width=3,
+        # hover_line_alpha=1,selection_line_alpha=1)
+        # p.add_tools(HoverTool(renderers = [lines],tooltips = [('origin','@origin'),('destination','@destination'),('flow','@flow')]))
+        # p.add_tools(TapTool(renderers = [lines]))
         #lines.selection_glyph =  MultiLine(line_color=Spectral4[2], line_width=10)
         #lines.hover_glyph = MultiLine(line_color=Spectral4[1], line_width=10)
     else:
-        p.tools.pop(-1)
-        p.tools.pop(-1)
-        p.renderers.pop(-1)
+        # p.tools.pop(-1)
+        # p.tools.pop(-1)
+        # p.renderers.pop(-1)
         source.data = {}
         
 # 绑定事件
 for model in models:
     model.on_change('value', lambda attr, old, new: update())
 
-# def update():
-#     #df = pd.DataFrame(source_row.data)
-#     current = df[(df['flow'] >= slider.value[0]) & (df['flow'] <= slider.value[1])].dropna()
-#     source.data = {
-#         'origin'            : current.origin,
-#         'destination'       : current.destination,
-#         'flow'              : current.flow,
-#     }
-
-# slider = RangeSlider(title="Max flow", start=0, end=100, value=(0, 100), step=0.5, format="0,0")
-# slider.on_change('value', lambda attr, old, new: update())
-
-
-
-# def update2():
-#     #df = pd.DataFrame(source_row.data)
-#     current = df[(df['flow'] >= spinnerMin.value) & (df['flow'] <= spinnerMax.value)].dropna()
-#     source.data = {
-#         'origin'            : current.origin,
-#         'destination'       : current.destination,
-#         'flow'              : current.flow,
-#     }
-# spinnerMin = Spinner(title="MinSalary", low=0, high=100, step=1, value=1, format="0,0.000")
-# spinnerMin.on_change('value',lambda attr, old, new: update2())
-# spinnerMax = Spinner(title="MaxSalary", low=0, high=100, step=1, value=10, format="0,0.000")
-# spinnerMax.on_change('value',lambda attr, old, new: update2())
 
 # 下载按钮组件
 DownloadButton = Button(label="Download", button_type="success")
@@ -293,68 +283,22 @@ DownloadButton.js_on_event("button_click", CustomJS(args=dict(source=source),
                             code=open(join(dirname(__file__), "download.js")).read()))
 
 # -------------------------------------------------------------------------------------
-# 地图展示模块
-# # 数据导入
-# connect = create_engine(
-#     f'postgresql://postgres:774165@127.0.0.1:5432/first')
-# nine_line = gpd.read_postgis('select * from nine_line_3857',con=connect,geom_col='geometry')
-# province = gpd.read_postgis('select * from province_3857',con=connect, geom_col='geometry')
-# citys = gpd.read_postgis('select * from citys_3857', con=connect, geom_col='geometry')
-
-# # 数据预处理，为构造OD数据做准备
-# coordinate = citys['geometry'].apply(lambda r: (r.x,r.y))
-# points = list(coordinate) # 点数据
-# edges = [] # 边数据
-# edge_list = df
-# for i in range(362):
-#     for j in range(361):
-#         k = j+1 if i==j else j
-#         #edges.append((i,k,edge_list['flow'][i*361+j]))
-#         edges.append((i,k))
-
-# # 构造画线的数据
-# # x, y, namex, namey, flow
-# xs = []
-# ys = []
-# flows = []
-# ori_name = []
-# des_name = []
-
-# for i in range(len(edge_list)):
-#     # if edges[i][2]<3:
-#     #     continue
-#     xs_i = [0]*2
-#     ys_i = [0]*2
-#     xs_i[0] = points[edges[i][0]][0]
-#     xs_i[1] = points[edges[i][1]][0]
-#     ys_i[0] = points[edges[i][0]][1]
-#     ys_i[1] = points[edges[i][1]][1]
-#     xs.append(xs_i.copy())
-#     ys.append(ys_i.copy())
-#     flows.append(edge_list['flow'][i])
-#     ori_name.append(edge_list['origin'][i])
-#     des_name.append(edge_list['destination'][i])
-
-# # 地图数据和线数据
-# mapper = linear_cmap(field_name="flow", palette=OrRd9, low=min(flows), high=max(flows))
-# alpha = flows/np.quantile(flows,0.999,interpolation='lower')
-# alpha = [a if a<=1 else 1 for a in alpha]
-# width = np.array(alpha) * 2
-# multi_line_source = ColumnDataSource({
-#     'xs': xs,
-#     'ys': ys,
-#     'flow': flows,
-#     'alpha': alpha,
-#     'width': width
-# })
-
-
 
 # 画图
 p = figure(background_fill_color="lightgrey",tools = "pan,wheel_zoom,zoom_in,zoom_out,reset")
 p.axis.visible = False
 p.grid.visible = False
-
+graph = GraphRenderer()
+graph.edge_renderer.data_source = source
+graph.node_renderer.glyph = Circle(size=3, fill_color='blue')
+graph.node_renderer.selection_glyph = Circle(size=15, fill_color='green')
+graph.node_renderer.hover_glyph = Circle(size=15, fill_color='red')
+graph.edge_renderer.selection_glyph = MultiLine(line_color='green', line_width=5, line_alpha=1)
+graph.edge_renderer.hover_glyph = MultiLine(line_color='red', line_width=5,line_alpha=1)
+graph.inspection_policy = EdgesAndLinkedNodes()
+graph.selection_policy = EdgesAndLinkedNodes()
+hover_tool = HoverTool(renderers = [graph],tooltips = [('origin','@origin'),('destination','@destination'),('flow','@flow')])
+tap_tool = TapTool(renderers=[graph])
 
 #widget
 columns = [
