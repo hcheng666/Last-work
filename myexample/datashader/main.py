@@ -42,6 +42,7 @@ messageButton.js_on_change("name", CustomJS(args=dict(type='success'),
 # 数据导入按钮
 database_button = Button(visible=True, name='Database')
 def load_data(event):
+    # 这里放个消息提示数据导入中
     global isLoad,flow,nine_line,province,citys,geosource_citys,geosource_nineline,geosource_province,city2id,id2city
     sql_query = "select * from "
     pg_table_name = "edge_list"
@@ -138,7 +139,7 @@ def update():
                             fill_alpha = 1)
         
         plot.renderers.append(graph)
-        plot.add_tools(hover_tool, TapTool())
+        plot.add_tools(hover_tool, tap_tool)
 
 # 查找和筛选组件
 models = []
@@ -155,26 +156,6 @@ models.append(spinnerMax)
 for model in models:
     model.on_change('value', lambda attr, old, new: update())
 
-# datashader
-
-# nodes = hv.Nodes(citys,['x','y','id'],['name'])
-# graph = hv.Graph(((flow), nodes), vdims=['flow','origin','destination','alpha','width'])
-# tooltips = [
-#     ('flow', '@flow'),
-#     ('origin', '@origin'),
-#     ('destination', '@destination')
-# ]
-# hover = HoverTool(tooltips=tooltips)
-# graph.opts(inspection_policy='edges').opts(
-#     opts.Graph(tools=[hover,'tap'],node_size=3, edge_cmap='blues', edge_color='flow',edge_alpha='alpha', edge_line_width='width',
-#     edge_hover_color='green',edge_hover_line_width=5,edge_hover_line_alpha=1,
-#     edge_selection_line_width=5,edge_selection_line_color='red',edge_selection_line_alpha=1,
-#     node_selection_color='red',edge_visible=False,node_visible=False))
-# renderer = hv.renderer('bokeh')
-# # renderer = renderer.instance(mode='server')
-# # hvplot = renderer.get_plot(graph)
-# # show(hvplot.state)
-# doc = renderer.server_doc(graph)
  
  # 流量图
 plot = figure(title="Graph Layout Demonstration")
@@ -191,8 +172,9 @@ graph.edge_renderer.selection_glyph = MultiLine(line_color='green', line_width=5
 graph.edge_renderer.hover_glyph = MultiLine(line_color='red', line_width=5,line_alpha=1)
 graph.inspection_policy = EdgesAndLinkedNodes()
 graph.selection_policy = EdgesAndLinkedNodes()
-hover_tool = HoverTool(tooltips=[("origin", "@origin"), ("destination", "@destination"), ("flow",'@flow')])
-
+#hover_tool = HoverTool(tooltips=[("origin", "@origin"), ("destination", "@destination"), ("flow",'@flow')])
+hover_tool = HoverTool(renderers = [graph],tooltips = [('origin','@origin'),('destination','@destination'),('flow','@flow')])
+tap_tool = TapTool(renderers=[graph])
 
 # 数据表
 columns = [
