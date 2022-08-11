@@ -352,4 +352,4 @@ const MessageType = {
 const messageComponent = new messageControl();
 
 // 调用
-messageComponent.message({ content: '数据加载成功！' , type: type, againBtn: 'false', duration: 800});
+messageComponent.message({ content: content , type: type, againBtn: 'true', duration: duration});
