@@ -1,7 +1,7 @@
-# import holoviews as hv
-# from holoviews import opts
-# import holoviews.operation.datashader as hd
-from email import message
+import holoviews as hv
+from holoviews import opts
+import holoviews.operation.datashader as hd
+from holoviews.operation.datashader import datashade, bundle_graph
 from bokeh.plotting import curdoc, figure
 from bokeh.models import (HoverTool,ColumnDataSource,MultiLine,EdgesAndLinkedNodes, Circle,TapTool,Button, 
                             CustomJS,Spinner,TextInput,GeoJSONDataSource,DataTable,NumberFormatter,TableColumn,
@@ -10,8 +10,8 @@ from bokeh.transform import linear_cmap
 from bokeh.palettes import OrRd9,Spectral4,Reds8
 from bokeh.layouts import column ,row
 from bokeh.events import ButtonClick
-# hd.shade.cmap=["lightblue", "darkblue"]
-# hv.extension("bokeh", "matplotlib") 
+hd.shade.cmap=["grey"]
+hv.extension("bokeh", "matplotlib") 
 import re
 import pandas as pd
 import numpy as np
@@ -41,7 +41,7 @@ messageButton.js_on_change("name", CustomJS(args=dict(type='success'),
                             code=open(join(dirname(__file__), "newMessage.js")).read()))
 
 # 数据导入按钮
-database_button = Button(visible=True, name='Database')
+database_button = Button(visible=True, name='Database',label='从数据库导入数据')
 def load_data(event):
     # 这里放个消息提示数据导入中
     messageButton.name = str(int(messageButton.name)+1)
@@ -68,6 +68,7 @@ def load_data(event):
         nine_line = gpd.read_postgis('select * from nine_line_3857',con=connect,geom_col='geometry')
         province = gpd.read_postgis('select * from province_3857',con=connect, geom_col='geometry')
         citys = gpd.read_postgis('select * from citys_3857', con=connect, geom_col='geometry')
+        #province['geometry'] = province.geometry.boundary
         geosource_nineline = GeoJSONDataSource(geojson = nine_line.to_json())
         geosource_province = GeoJSONDataSource(geojson = province.to_json())
         geosource_citys = GeoJSONDataSource(geojson = citys.to_json())
@@ -112,6 +113,9 @@ def update():
         flow_ = flow_[fuzzyfinder(searchTextOrigin.value,flow_['origin'])]
     if searchTextDestination.value!='':
         flow_ = flow_[fuzzyfinder(searchTextDestination.value,flow_['destination'])]
+    if flow_.empty:
+        # message
+        return 
     mapper = linear_cmap(field_name="flow", palette=Reds8, low=min(flow_['flow']), high=max(flow_['flow']))
     alpha = flow_['flow']/np.max(flow_['flow'])#np.quantile(flow_['flow'],0.999,interpolation='lower')
     flow_.loc[:,'alpha'] = pd.Series([a if a<=1 else 1 for a in alpha]).values
@@ -129,11 +133,20 @@ def update():
     }
     graph.edge_renderer.glyph = MultiLine(line_color=mapper, line_alpha='alpha', line_width='width')
     if isLoad==False:
-        plot.patches('xs','ys', source = geosource_province,
-                            fill_color = None,
-                            line_color = 'grey', 
-                            line_width = 1, 
-                            fill_alpha = 1)
+        # plot.patches('xs','ys', source = geosource_province,
+        #                     fill_color = None,
+        #                     line_color = 'grey', 
+        #                     line_width = 1, 
+        #                     fill_alpha = 1)
+        dd = hv.Polygons(province).opts(line_alpha=0,fill_color='#CDCDCD')
+        dd2 = datashade(hv.Path(province))
+        #dd2 = datashade(hv.Path(province).opts(opts.Path(color='grey')))
+        renderer = hv.renderer('bokeh')
+        renderer = renderer.instance(mode='server')
+        hvplot = renderer.get_plot(dd)
+        hvplot2 = renderer.get_plot(dd2)
+        plot.renderers.append(hvplot.state.renderers[0])
+        plot.renderers.append(hvplot2.state.renderers[0])
         plot.patches('xs','ys', source = geosource_nineline,
                             fill_color = None,
                             line_color = 'gray', 
@@ -190,5 +203,5 @@ data_table = DataTable(source=edge_source, columns=columns, width=500)
 
     #button.label = str(int(button.label)+1)
 #button.on_event(ButtonClick, update)
-
-curdoc().add_root(column(messageButton,database_button,row(spinnerMin,spinnerMax),row(searchTextOrigin,searchTextDestination),row(data_table,plot)))
+curdoc().add_root(database_button)
+curdoc().add_root(row(column(messageButton,row(spinnerMin,spinnerMax),row(searchTextOrigin,searchTextDestination),data_table),plot))
