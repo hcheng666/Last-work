@@ -18,7 +18,8 @@ from os.path import dirname, join
 
 
 from bokeh.io import curdoc
-from bokeh.models import HoverTool,ColumnDataSource, TableColumn, DataTable
+from bokeh.models import HoverTool,ColumnDataSource, TableColumn,TextInput
+from bokeh.models.widgets import DataTable
 from bokeh.models import Button, CustomJS, Spinner, NumberFormatter, Div
 from bokeh.plotting import figure
 from bokeh.layouts import row, column
@@ -114,6 +115,7 @@ spinner_negative = Spinner(title="Negative Sample Size:", low=1, high=10, step=1
 spinner_dimension = Spinner(title="Dimension Size:", low=10, high=150, step=10, value=80)
 spinner_epoch = Spinner(title="Epochs:", low=1, high=5, step=1, value=1)
 button_train = Button(label='Get Vector',button_type="primary")
+searchCity = TextInput(value = '', title='Chose city: ')
 
 def train():
     # 获取参数
@@ -241,7 +243,6 @@ def train():
 def callback():
     pool = multiprocessing.Pool()
     pool.apply_async(train)
-    div.text = '训练中'
     pool.close()
     pool.join()
     messageButton.name = str(int(messageButton.name)+1)
@@ -281,8 +282,6 @@ def callback():
     # p3.circle(y='y', x='x',color='red',size=3,source=p3_source)
     table_source.data = np.load('table_data.npy',allow_pickle=True).item()
     # 加一个按钮的点击，提示训练完成
-    div.text = '训练完成'
-    # 这个div可以作为一个状态栏
 
 
 # button_train.js_on_click(CustomJS(code="""
@@ -292,28 +291,30 @@ button_train.js_on_click(CustomJS(args=dict(type='warning',content='开始训练
                         code=open(join(dirname(__file__), "newMessage.js")).read()))
 button_train.on_event(ButtonClick, callback)
 # 正样本采样和原始网络的散点图
-p1 = figure(background_fill_color="lightgrey", width=300,height=300)
+p1 = figure(background_fill_color="lightgrey", width=300,height=200)
 #p1_source = ColumnDataSource(data=dict())
 # 两个相关性散点图
-p2 = figure(background_fill_color="lightgrey", width=300,height=300)
+p2 = figure(background_fill_color="lightgrey", width=300,height=200)
 #p2_source = ColumnDataSource(data=dict())
 
-p3 = figure(background_fill_color="lightgrey", width=300,height=300)
+p3 = figure(background_fill_color="lightgrey", width=300,height=200)
 #p3_source = ColumnDataSource(data=dict())
 # 向量表
 columns = []
 for i in range(len(citys)):
-    columns.append(TableColumn(field=citys['name'][i],title=citys['name'][i], formatter=NumberFormatter(format="0.000")))
+    columns.append(TableColumn(field=citys['name'][i],title=citys['name'][i], formatter=NumberFormatter(format="0.0000"),width=30))
 
 table_source = ColumnDataSource(data=dict())
-data_table = DataTable(source=table_source, columns=columns, width=700)
-div = Div(text='准备训练')
+data_table = DataTable(source=table_source, columns=columns, width=900,height=600,autosize_mode="force_fit")
+# def selectCity(attr, old, new):
+#      table_source.selected['1d'].indices = [0]
+# searchCity.on_change('value',selectCity)
 # 消息按钮
 messageButton = Button(label="message",name=str(0),visible=False)
 messageButton.js_on_change("name", CustomJS(args=dict(type='success',content='训练完成', duration='1000'),
                             code=open(join(dirname(__file__), "newMessage.js")).read()))
 
-curdoc().add_root(column(row(column(messageButton,spinner_target,spinner_negative),column(spinner_dimension,spinner_epoch)),row(button_train,div),row(data_table,column(p1,p2,p3))))
+curdoc().add_root(row(column(row(messageButton,spinner_target,spinner_negative),row(spinner_dimension,spinner_epoch,searchCity),button_train,data_table),column(p1,p2,p3)))
 
 
 # 功能已近实现，但还有几个问题
